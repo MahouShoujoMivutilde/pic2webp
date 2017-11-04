@@ -185,6 +185,14 @@ if __name__ == '__main__':
 
     start = clock()
     with Pool() as pool:
+        try:
+            import psutil
+            parent = psutil.Process()
+            parent.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+            for child in parent.children():
+                child.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+        except:
+            pass
         results = pool.map(encode3 if not args.to_decode else decode2, files)
     if len(results) > 0:
         final_output(results)
