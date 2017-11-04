@@ -100,6 +100,7 @@ def encode3(fp):
     except Exception as e:
         return(0, 0)
         print('что-то умерло: {}, \n{}'.format(fp, e))
+        return(0, 0)
 
 
 def decode2(fp):
@@ -126,6 +127,7 @@ def decode2(fp):
     except Exception as e:
         return(0, 0)
         print('что-то умерло: {}, \n{}'.format(fp, e))
+        return(0, 0)
 
 
 def get_args():
