@@ -43,5 +43,12 @@ $RECYCLE.BIN/
 .AppleDB
 .AppleDesktop
 Network Trash Folder
-Temporary Items
+
+# Temporary Items
 .apdisk
+
+
+# build
+build
+dist
+__*__

@@ -1,10 +1,10 @@
 #! python3
 
 from os import path, walk, remove, listdir, sep
-from multiprocessing import Pool
+from multiprocessing import Pool, freeze_support
 from time import clock
 from datetime import timedelta
-from sys import argv
+from sys import argv, exit
 from codecs import open as open2
 from PIL import Image
 import argparse
@@ -165,6 +165,7 @@ def final_output(resuls):
     print('\nвсего: {}, {} файл(ов)\n'.format(sizeof_fmt(sum_dif) if sum_dif <= 0 else '+' + sizeof_fmt(sum_dif), len(results)))
 
 if __name__ == '__main__':
+    freeze_support()
     args = get_args()
     if args.exif:
         show_exif(args.input)
