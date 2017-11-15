@@ -1,12 +1,18 @@
 # -*- mode: python -*-
 
+from os import path
+
+# Windows 10 SDK ddls
+dlls = r'C:\Program Files (x86)\Windows Kits\10\Redist\ucrt\DLLs\x64'
+
+pathex = ['pic2webp.py']
+if path.isdir(dlls):
+    pathex += [dlls]
+
 block_cipher = None
 
 a = Analysis(['pic2webp.py'],
-             pathex = [
-              'pic2webp.py', 
-              r'C:\Program Files (x86)\Windows Kits\10\Redist\ucrt\DLLs\x64'
-              ],
+             pathex = pathex,
              binaries = [],
              datas = [],
              hiddenimports = [],
