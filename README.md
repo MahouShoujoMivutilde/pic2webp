@@ -12,6 +12,8 @@
 * * `pillow` - для конвертирования
 * * `psutil` - для снижения приоритета дочерним процессам
 
+Готовый **[exe](https://github.com/MahouShoujoMivutilde/pic2webp/releases/latest)**.
+
 #### Использование
 ```
 usage: pic2webp.py [-h] --input INPUT [--to_decode] [-exif]
