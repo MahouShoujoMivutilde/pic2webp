@@ -9,8 +9,8 @@
 ---
 #### Требования
 * `python 3.4+ `
-* * `pillow` - для конвертирования
-* * `psutil` - для снижения приоритета дочерним процессам
+	* `pillow` - для конвертирования
+	* `psutil` - для снижения приоритета дочерним процессам
 
 Готовый **[exe](https://github.com/MahouShoujoMivutilde/pic2webp/releases/latest)**.
 
