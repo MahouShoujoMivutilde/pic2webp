@@ -98,7 +98,6 @@ def encode3(fp):
             print('не получилось удалить: {}, \n{}'.format(fp, e))
         return(webp, original)
     except Exception as e:
-        return(0, 0)
         print('что-то умерло: {}, \n{}'.format(fp, e))
         return(0, 0)
 
@@ -125,7 +124,6 @@ def decode2(fp):
             print('не получилось удалить: {}, \n{}'.format(fp, e))
         return(out, original)
     except Exception as e:
-        return(0, 0)
         print('что-то умерло: {}, \n{}'.format(fp, e))
         return(0, 0)
 
