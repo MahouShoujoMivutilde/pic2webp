@@ -139,13 +139,13 @@ def get_args():
     return parser.parse_args()
 
 
-def get_files(Path, to_decode, sup):  # возвращает только файлы, которые нужно кодировать.
+def get_files(Path, sup):  # возвращает только файлы, которые нужно кодировать.
     files = []
     for dirpath, dirnames, filenames in walk(Path):
         for f in filenames:
             fp = path.join(dirpath, f)
-            name, ext = path.splitext(f)
-            if (ext in sup) and ((not to_decode and '{}.webp'.format(name) not in filenames) or (to_decode and '{}.png'.format(name) not in filenames)):
+            ext = path.splitext(f)[1]
+            if ext in sup:
                 files.append(fp)
     return files
 
@@ -186,7 +186,7 @@ if __name__ == '__main__':
         exit('жизнь меня к такому не готовила!')
 
     for p in paths: # игнорится при paths = []
-        files.extend(get_files(p, args.to_decode, sup))
+        files.extend(get_files(p, sup))
 
     start = clock()
     with Pool() as pool:
