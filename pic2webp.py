@@ -23,22 +23,21 @@ remove_after = True  # Удалять исходник после кодиров
 sup += [i.upper() for i in sup]
 
 
-def get_exif(fp):
-    from PIL.ExifTags import TAGS
-    ret = {}
-    with Image.open(fp) as i:
-        info = i._getexif()
-    if info:
-        for tag, value in info.items():
-            decoded = TAGS.get(tag, tag)
-            if decoded != 'MakerNote': # Это тег без стандартных спецификаций, туда производитель может писать всё, что душе угодно, так что непредсказуем...
-                ret[decoded] = value
-    else:
-        ret = None
-    return ret
-
-
 def show_exif(fp):
+    def get_exif(fp):
+        from PIL.ExifTags import TAGS
+        ret = {}
+        with Image.open(fp) as i:
+            info = i._getexif()
+        if info:
+            for tag, value in info.items():
+                decoded = TAGS.get(tag, tag)
+                if decoded != 'MakerNote': # Это тег без стандартных спецификаций, туда производитель может писать всё, что душе угодно, так что непредсказуем...
+                    ret[decoded] = value
+        else:
+            ret = None
+        return ret
+
     if path.splitext(fp)[1] in ('.webp', '.WEBP') and path.isfile(fp):
         exif_dic = get_exif(fp)
         if exif_dic:
@@ -50,11 +49,10 @@ def show_exif(fp):
         print('не webp / не существует')
 
 
-def percentage_difference(out_val, in_val):
-    return round(100*(out_val/in_val - 1), 2)
-
-
 def size_difference(after, before):
+    def percentage_difference(out_val, in_val):
+        return round(100*(out_val/in_val - 1), 2)
+
     out = path.getsize(after)
     original = path.getsize(before)
     dif = percentage_difference(out, original)
@@ -75,7 +73,7 @@ def is_available(name):
     return name
 
 
-def encode3(fp):
+def encode(fp):
     try:
         with Image.open(fp) as image:
             exif = image.info.get('exif', b'') # если exif есть - берет его, если нет - возвращает пустую строку байт
@@ -102,7 +100,7 @@ def encode3(fp):
         return(0, 0)
 
 
-def decode2(fp):
+def decode(fp):
     try:
         with Image.open(fp) as image:
             base = path.splitext(fp)[0]
@@ -196,7 +194,7 @@ if __name__ == '__main__':
                 child.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
         except:
             pass
-        results = pool.map(encode3 if not args.to_decode else decode2, files)
+        results = pool.map(encode if not args.to_decode else decode, files)
     if len(results) > 0:
         final_output(results)
     print('%s: %s\n%s' % (path.split(argv[0])[1], str(timedelta(seconds = round(clock() - start))), '-'*34))
