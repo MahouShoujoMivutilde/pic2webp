@@ -2,7 +2,7 @@
 
 from os import path
 
-# Windows 10 SDK ddls
+# Windows 10 SDK dlls
 dlls = r'C:\Program Files (x86)\Windows Kits\10\Redist\ucrt\DLLs\x64'
 
 pathex = ['pic2webp.py']
