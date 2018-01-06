@@ -16,7 +16,7 @@
 
 #### Использование
 ```
-usage: pic2webp.py [-h] --input INPUT [--to_decode] [-exif]
+usage: pic2webp.py [-h] --input INPUT [--to_decode] [-exif] [-L]
 
 Скрипт для конвертирования изображений в webp
 
@@ -25,6 +25,7 @@ optional arguments:
   --to_decode, -d       Конвертировать из webp в png/jpeg в зависимости от
                         режима изображения (с прозрачностью/без)
   -exif                 Вывод exif webp-изображения по заданному пути
+  -L                    Сжатие png без потерь
 
 required arguments:
   --input INPUT, -i INPUT
