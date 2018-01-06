@@ -7,14 +7,13 @@ from datetime import timedelta
 from sys import argv, exit
 from codecs import open as open2
 from PIL import Image
+from functools import partial
 import argparse
 import re
 
 Image.MAX_IMAGE_PIXELS = 1000*10**6 # Для очень больших изображений - т.е. предупреждения о бомбе декомпрессии не будет вплоть до картинок в 1000МП  
 
 Q = 90
-
-lossless_png = False # Сохраняет png, которые < 1920px по любой стороне без потерь, вообще.
 
 sup = ['.jpg', '.jpeg', '.png'] # Изображения каких форматов будут кодироваться в webp
 
@@ -73,17 +72,16 @@ def is_available(name):
     return name
 
 
-def encode(fp):
+def encode(fp, lossless_png):
     try:
         with Image.open(fp) as image:
             exif = image.info.get('exif', b'') # если exif есть - берет его, если нет - возвращает пустую строку байт
             image = image.convert('RGBA')
-            small_size = image.width < 1920 and image.height < 1920
             base, ext = path.splitext(fp)
             name = path.split(fp)[1]
-            if ext == '.png' and small_size and lossless_png:
+            if ext == '.png' and lossless_png:
                 webp_path = is_available('%s_qLL.webp' % base)
-                image.save(webp_path, lossless = True, exif = exif)
+                image.save(webp_path, lossless = True, quality = Q, exif = exif)
             else:
                 webp_path = is_available('%s_q%d.webp' % (base, Q))
                 image.save(webp_path, quality = Q, exif = exif)
@@ -132,6 +130,7 @@ def get_args():
     requiredNamed.add_argument("--input", "-i", required = True, help = "Путь к изображению, папке с изображениями или .utf8.txt-списку папок (в котором каждый новый путь с новой строки)")
     parser.add_argument("--to_decode", "-d", default = False, action = "store_true", help = "Конвертировать из webp в png/jpeg в зависимости от режима изображения (с прозрачностью/без)")
     parser.add_argument("-exif", default = False, action = "store_true", help = "Вывод exif webp-изображения по заданному пути")
+    parser.add_argument("-L", default = False, action = "store_true", help = "Сжатие png без потерь")
     return parser.parse_args()
 
 
@@ -194,7 +193,7 @@ if __name__ == '__main__':
                 child.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
         except:
             pass
-        results = pool.map(encode if not args.to_decode else decode, files)
+        results = pool.map(partial(encode, lossless_png = args.L) if not args.to_decode else decode, files)
     if len(results) > 0:
         final_output(results)
     print('%s: %s\n%s' % (path.split(argv[0])[1], str(timedelta(seconds = round(clock() - start))), '-'*34))
