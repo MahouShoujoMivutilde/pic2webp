@@ -15,12 +15,9 @@ Image.MAX_IMAGE_PIXELS = 1000*10**6 # Для очень больших изоб�
 
 Q = 90
 
-sup = ['.jpg', '.jpeg', '.png'] # Изображения каких форматов будут кодироваться в webp
+defualt_formats = ['.jpg', '.png'] # Изображения каких форматов будут кодироваться в webp
 
 remove_after = True  # Удалять исходник после кодирования?
-
-sup += [i.upper() for i in sup]
-
 
 def show_exif(fp):
     def get_exif(fp):
@@ -47,7 +44,6 @@ def show_exif(fp):
     else:
         print('не webp / не существует')
 
-
 def size_difference(after, before):
     def percentage_difference(out_val, in_val):
         return round(100*(out_val/in_val - 1), 2)
@@ -57,7 +53,6 @@ def size_difference(after, before):
     dif = percentage_difference(out, original)
     return(dif, out, original)
 
-
 def sizeof_fmt(num, suffix='B'):  # http://stackoverflow.com/a/1094933
     for unit in ['', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
         if abs(num) < 1024.0:
@@ -65,12 +60,10 @@ def sizeof_fmt(num, suffix='B'):  # http://stackoverflow.com/a/1094933
         num /= 1024.0
     return "%.1f%s%s" % (num, 'Yi', suffix)
 
-
 def is_available(name):
     # на будущее
     # из-за многопроцессности нет возможности 100% надежно сделать это без остановок
     return name
-
 
 def encode(fp, lossless_png):
     try:
@@ -97,7 +90,6 @@ def encode(fp, lossless_png):
         print('что-то умерло: {}, \n{}'.format(fp, e))
         return(0, 0)
 
-
 def decode(fp):
     try:
         with Image.open(fp) as image:
@@ -123,7 +115,6 @@ def decode(fp):
         print('что-то умерло: {}, \n{}'.format(fp, e))
         return(0, 0)
 
-
 def get_args():
     parser = argparse.ArgumentParser(description = "Скрипт для конвертирования изображений в webp") 
     requiredNamed = parser.add_argument_group('required arguments')
@@ -131,16 +122,16 @@ def get_args():
     parser.add_argument("--to_decode", "-d", default = False, action = "store_true", help = "Конвертировать из webp в png/jpeg в зависимости от режима изображения (с прозрачностью/без)")
     parser.add_argument("-exif", default = False, action = "store_true", help = "Вывод exif webp-изображения по заданному пути")
     parser.add_argument("-L", default = False, action = "store_true", help = "Сжатие png без потерь")
+    parser.add_argument("-f", default = defualt_formats, type = lambda s: s.split(','),  help = "Кастомный список поддерживаемых форматов для конвертации в webp через запятую без пробелов")
     return parser.parse_args()
 
-
-def get_files(Path, sup):  # возвращает только файлы, которые нужно кодировать.
+def get_files(Path, supported):  # возвращает только файлы, которые нужно кодировать.
     files = []
     for dirpath, dirnames, filenames in walk(Path):
         for f in filenames:
             fp = path.join(dirpath, f)
             ext = path.splitext(f)[1]
-            if ext in sup:
+            if ext in supported:
                 files.append(fp)
     return files
 
@@ -159,9 +150,26 @@ def final_output(resuls):
     sum_dif = sum(map(lambda L: L[0], results)) - sum(map(lambda L: L[1], results))
     print('\nвсего: {}, {} файл(ов)\n'.format(sizeof_fmt(sum_dif) if sum_dif <= 0 else '+' + sizeof_fmt(sum_dif), len(results)))
 
+def prepare_supported(supported):
+    if 'jpg' in supported and 'jpeg' not in supported:
+        supported.append('jpeg')
+    elif 'jpeg' in supported and 'jpg' not in supported:
+        supported.append('jpg')
+    supported += [i.upper() for i in supported]
+    L = []
+    for i in supported:
+        if '.' not in i:
+            L.append('.{}'.format(i))
+        else:
+            L.append(i)
+    return L
+
 if __name__ == '__main__':
     freeze_support()
     args = get_args()
+    
+    sup = prepare_supported(args.f)
+
     if args.exif:
         show_exif(args.input)
         exit()
