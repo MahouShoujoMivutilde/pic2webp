@@ -1,6 +1,6 @@
 #! python3
 
-from os import path, walk, remove, listdir, sep
+from os import path, walk, remove, sep
 from multiprocessing import Pool, freeze_support
 from time import clock
 from datetime import timedelta
@@ -8,14 +8,16 @@ from sys import argv, exit
 from codecs import open as open2
 from PIL import Image
 from functools import partial
+import mimetypes
 import argparse
+import psutil
 import re
 
 Image.MAX_IMAGE_PIXELS = 1000*10**6 # Для очень больших изображений - т.е. предупреждения о бомбе декомпрессии не будет вплоть до картинок в 1000МП  
 
 Q = 90
 
-defualt_formats = ['.jpg', '.png'] # Изображения каких форматов будут кодироваться в webp
+default_formats = ['jpeg', 'png'] # Изображения каких форматов (по MIME) будут кодироваться в webp
 
 remove_after = True  # Удалять исходник после кодирования?
 
@@ -122,7 +124,7 @@ def get_args():
     parser.add_argument("--to_decode", "-d", default = False, action = "store_true", help = "Конвертировать из webp в png/jpeg в зависимости от режима изображения (с прозрачностью/без)")
     parser.add_argument("-exif", default = False, action = "store_true", help = "Вывод exif webp-изображения по заданному пути")
     parser.add_argument("-L", default = False, action = "store_true", help = "Сжатие png без потерь")
-    parser.add_argument("-f", default = defualt_formats, type = lambda s: s.split(','),  help = "Кастомный список поддерживаемых форматов для конвертации в webp через запятую без пробелов")
+    parser.add_argument("-f", default = default_formats, type = lambda s: s.split(','),  help = "Кастомный список поддерживаемых форматов для конвертации в webp через запятую без пробелов (как MIME, но типа не 'image/jpeg,image/png', а 'jpeg,png')")
     return parser.parse_args()
 
 def get_files(Path, supported):  # возвращает только файлы, которые нужно кодировать.
@@ -130,8 +132,8 @@ def get_files(Path, supported):  # возвращает только файлы,
     for dirpath, dirnames, filenames in walk(Path):
         for f in filenames:
             fp = path.join(dirpath, f)
-            ext = path.splitext(f)[1]
-            if ext in supported:
+            mime = mimetypes.guess_type(fp)[0]
+            if mime and mime.split('/')[1] in supported:
                 files.append(fp)
     return files
 
@@ -151,18 +153,16 @@ def final_output(resuls):
     print('\nвсего: {}, {} файл(ов)\n'.format(sizeof_fmt(sum_dif) if sum_dif <= 0 else '+' + sizeof_fmt(sum_dif), len(results)))
 
 def prepare_supported(supported):
-    if 'jpg' in supported and 'jpeg' not in supported:
-        supported.append('jpeg')
-    elif 'jpeg' in supported and 'jpg' not in supported:
-        supported.append('jpg')
-    supported += [i.upper() for i in supported]
-    L = []
-    for i in supported:
-        if '.' not in i:
-            L.append('.{}'.format(i))
-        else:
-            L.append(i)
-    return L
+    sup = supported[:]
+    if 'jpg' in sup:
+        sup.append('jpeg')
+    return list(set(sup))
+
+def lower_child_priority():
+    parent = psutil.Process()
+    parent.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+    for child in parent.children():
+        child.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
 
 if __name__ == '__main__':
     freeze_support()
@@ -175,7 +175,7 @@ if __name__ == '__main__':
         exit()
 
     if args.to_decode:
-        sup = ['.webp', '.WEBP']
+        sup = ['webp']
 
     files = []
     paths = []
@@ -193,14 +193,7 @@ if __name__ == '__main__':
 
     start = clock()
     with Pool() as pool:
-        try:
-            import psutil
-            parent = psutil.Process()
-            parent.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
-            for child in parent.children():
-                child.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
-        except:
-            pass
+        lower_child_priority()
         results = pool.map(partial(encode, lossless_png = args.L) if not args.to_decode else decode, files)
     if len(results) > 0:
         final_output(results)

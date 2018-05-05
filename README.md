@@ -27,7 +27,8 @@ optional arguments:
   -exif                 Вывод exif webp-изображения по заданному пути
   -L                    Сжатие png без потерь
   -f F                  Кастомный список поддерживаемых форматов для
-                        конвертации в webp через запятую без пробелов
+                        конвертации в webp через запятую без пробелов (как
+                        MIME, но типа не 'image/jpeg,image/png', а 'jpeg,png')
 
 required arguments:
   --input INPUT, -i INPUT
