@@ -1,14 +1,13 @@
 #! python3
 
-from os import path, walk, remove, sep
+from os import path, walk, remove
 from multiprocessing import Pool, freeze_support
 from time import clock
 from datetime import timedelta
 from sys import argv, exit
-from codecs import open as open2
+from codecs import open as copen
 from PIL import Image
 from functools import partial
-import mimetypes
 import argparse
 import psutil
 import re
@@ -17,9 +16,37 @@ Image.MAX_IMAGE_PIXELS = 1000*10**6 # Для очень больших изоб�
 
 Q = 90
 
-default_formats = ['jpeg', 'png'] # Изображения каких форматов (по MIME) будут кодироваться в webp
+default_formats = ['jpeg', 'png'] # Изображения каких форматов будут кодироваться в webp
 
-remove_after = True  # Удалять исходник после кодирования?
+remove_after = True # Удалять исходник после кодирования?
+
+UF = 'unknown_format'
+
+def get_args():
+    parser = argparse.ArgumentParser(description = "Скрипт для конвертирования изображений в webp") 
+    parser.add_argument("--input", "-i", help = "Путь к изображению, папке с изображениями или .utf8.txt-списку папок (в котором каждый новый путь с новой строки)")
+    parser.add_argument("--to_decode", "-d", action = "store_true", help = "Конвертировать из webp в png/jpeg в зависимости от режима изображения (с прозрачностью/без)")
+    parser.add_argument("-exif", action = "store_true", help = "Вывод exif webp-изображения по заданному пути")
+    parser.add_argument("-L", action = "store_true", help = "Сжатие png без потерь")
+    parser.add_argument("-f", default = default_formats, type = lambda s: s.split(','),  help = "Кастомный список кодируемых форматов (остальные игнорятся) для конвертации в webp, через запятую без пробелов - см. доступные через --supported, дефолтно '{}'".format(','.join(default_formats)))
+    parser.add_argument("--supported", action = "store_true",  help = "Вывести список всех поддерживаемых форматов данной версии Pillow")
+    return parser.parse_args()
+
+def prepare_supported(supported):
+    sup = [f.lower() for f in supported[:]]
+    if 'jpg' in sup:
+        sup.append('jpeg')
+    return list(set(sup))
+
+def show_supported_formats():
+    def rebuild_dic(formats, exts):
+        return {f:[ext for ext, fmt in exts.items() if f == fmt] for f in formats}
+
+    exts = Image.registered_extensions()
+    formats = sorted(list(set(exts.values())))
+
+    for f, exts in rebuild_dic(formats, exts).items():
+        print('{} ({})'.format(f, ', '.join(exts)))
 
 def show_exif(fp):
     def get_exif(fp):
@@ -36,7 +63,7 @@ def show_exif(fp):
             ret = None
         return ret
 
-    if path.splitext(fp)[1] in ('.webp', '.WEBP') and path.isfile(fp):
+    if path.isfile(fp) and get_type(fp) == 'webp':
         exif_dic = get_exif(fp)
         if exif_dic:
             for name in exif_dic:
@@ -46,100 +73,9 @@ def show_exif(fp):
     else:
         print('не webp / не существует')
 
-def size_difference(after, before):
-    def percentage_difference(out_val, in_val):
-        return round(100*(out_val/in_val - 1), 2)
-
-    out = path.getsize(after)
-    original = path.getsize(before)
-    dif = percentage_difference(out, original)
-    return(dif, out, original)
-
-def sizeof_fmt(num, suffix='B'):  # http://stackoverflow.com/a/1094933
-    for unit in ['', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
-        if abs(num) < 1024.0:
-            return "%3.1f%s%s" % (num, unit, suffix)
-        num /= 1024.0
-    return "%.1f%s%s" % (num, 'Yi', suffix)
-
-def is_available(name):
-    # на будущее
-    # из-за многопроцессности нет возможности 100% надежно сделать это без остановок
-    return name
-
-def encode(fp, lossless_png):
-    try:
-        with Image.open(fp) as image:
-            exif = image.info.get('exif', b'') # если exif есть - берет его, если нет - возвращает пустую строку байт
-            image = image.convert('RGBA')
-            base, ext = path.splitext(fp)
-            name = path.split(fp)[1]
-            if ext == '.png' and lossless_png:
-                webp_path = is_available('%s_qLL.webp' % base)
-                image.save(webp_path, lossless = True, quality = Q, exif = exif)
-            else:
-                webp_path = is_available('%s_q%d.webp' % (base, Q))
-                image.save(webp_path, quality = Q, exif = exif)
-            size_dif, webp, original = size_difference(webp_path, fp)
-            print(' {} >>> .webp, {}%'.format(name[:57] + '...' if len(name) > 57 else name, size_dif if size_dif <= 0 else '+' + str(size_dif)))
-        try:
-            if remove_after:
-                remove(fp)
-        except Exception as e:
-            print('не получилось удалить: {}, \n{}'.format(fp, e))
-        return(webp, original)
-    except Exception as e:
-        print('что-то умерло: {}, \n{}'.format(fp, e))
-        return(0, 0)
-
-def decode(fp):
-    try:
-        with Image.open(fp) as image:
-            base = path.splitext(fp)[0]
-            name = path.split(fp)[1]
-            no_ext = path.splitext(name)[0]
-            base2 = sep.join(base.split(sep)[:-1])
-            for patt in re.findall('(_q\d{1,2}0{1}?|_qLL)', no_ext): # чтобы убрать суффикс _qЧИСЛО
-                no_ext = no_ext.replace(patt, '')
-            if image.mode == 'RGBA': # прозрачность важнее метаданных
-                image.save(path.join(base2, no_ext + '.png'))
-            else:
-                exif = image.info.get('exif', b'')
-                image.save(path.join(base2, no_ext + '.jpg'), quality = 95, exif = exif)
-            size_dif, out, original = size_difference(path.join(base2, no_ext + '.png') if image.mode == 'RGBA' else path.join(base2, no_ext + '.jpg'), fp)
-            print(' {} >>> .{}'.format(name[:77] + '...' if len(name) > 77 else name, 'png' if image.mode == 'RGBA' else 'jpg'))
-        try:
-            remove(fp)
-        except Exception as e:
-            print('не получилось удалить: {}, \n{}'.format(fp, e))
-        return(out, original)
-    except Exception as e:
-        print('что-то умерло: {}, \n{}'.format(fp, e))
-        return(0, 0)
-
-def get_args():
-    parser = argparse.ArgumentParser(description = "Скрипт для конвертирования изображений в webp") 
-    requiredNamed = parser.add_argument_group('required arguments')
-    requiredNamed.add_argument("--input", "-i", required = True, help = "Путь к изображению, папке с изображениями или .utf8.txt-списку папок (в котором каждый новый путь с новой строки)")
-    parser.add_argument("--to_decode", "-d", default = False, action = "store_true", help = "Конвертировать из webp в png/jpeg в зависимости от режима изображения (с прозрачностью/без)")
-    parser.add_argument("-exif", default = False, action = "store_true", help = "Вывод exif webp-изображения по заданному пути")
-    parser.add_argument("-L", default = False, action = "store_true", help = "Сжатие png без потерь")
-    parser.add_argument("-f", default = default_formats, type = lambda s: s.split(','),  help = "Кастомный список поддерживаемых форматов для конвертации в webp через запятую без пробелов (как MIME, но типа не 'image/jpeg,image/png', а 'jpeg,png')")
-    return parser.parse_args()
-
-def get_files(Path, supported):  # возвращает только файлы, которые нужно кодировать.
-    files = []
-    for dirpath, dirnames, filenames in walk(Path):
-        for f in filenames:
-            fp = path.join(dirpath, f)
-            mime = mimetypes.guess_type(fp)[0]
-            if mime and mime.split('/')[1] in supported:
-                files.append(fp)
-    return files
-
 def parse_txt(txt):
     L = []
-    with open2(txt, 'r', 'utf-8') as f:
+    with copen(txt, 'r', 'utf-8') as f:
         for line in f.readlines():
             p = line.replace('\r\n', '')
             if path.isdir(p):
@@ -148,15 +84,21 @@ def parse_txt(txt):
                 print('{} - пропущен, т.к. не папка / не существует'.format(p))
     return L
 
-def final_output(resuls):
-    sum_dif = sum(map(lambda L: L[0], results)) - sum(map(lambda L: L[1], results))
-    print('\nвсего: {}, {} файл(ов)\n'.format(sizeof_fmt(sum_dif) if sum_dif <= 0 else '+' + sizeof_fmt(sum_dif), len(results)))
+def get_type(fp):
+    try:
+        with Image.open(fp) as img:
+            return img.format.lower()
+    except:
+        return UF
 
-def prepare_supported(supported):
-    sup = supported[:]
-    if 'jpg' in sup:
-        sup.append('jpeg')
-    return list(set(sup))
+def get_files(Path, supported):
+    files = []
+    for dirpath, dirnames, filenames in walk(Path):
+        for f in filenames:
+            fp = path.join(dirpath, f)
+            if get_type(fp) in supported:
+                files.append(fp)
+    return files
 
 def lower_child_priority():
     parent = psutil.Process()
@@ -164,16 +106,115 @@ def lower_child_priority():
     for child in parent.children():
         child.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
 
+def sizeof_fmt(num, suffix='B'):  # http://stackoverflow.com/a/1094933
+    for unit in ['', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f%s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f%s%s" % (num, 'Yi', suffix)
+
+def encode(fp, lossless_png, back_convert = False):
+    def get_PIL_image(fp):
+        with Image.open(fp) as image:
+            if image.mode in ('RGBA', 'LA') or (image.mode == 'P' and 'transparency' in image.info):
+                return image.convert('RGBA')
+            else:
+                return image.convert('RGB')
+    
+    def get_webp_path(fp, lossless_png):
+        base = path.splitext(fp)[0]
+        if get_type(fp) == 'png' and lossless_png:
+            return '%s_qLL.webp' % base
+        else:
+            return '%s_q%d.webp' % (base, Q)
+    
+    def get_back_img_path(fp, image):
+        name = path.basename(fp)
+        dp = path.dirname(fp)
+        no_ext_name = re.sub('(_q\d{1,2}0{1}?|_qLL)', '', path.splitext(name)[0]) # чтобы убрать суффикс _qЧИСЛО
+        if image.mode == 'RGBA':
+            return path.join(dp, no_ext_name + '.png')
+        else:
+            return path.join(dp, no_ext_name + '.jpg')
+    
+    def size_difference(after, before):
+        percentage_difference = lambda out_val, in_val: round(100*(out_val/in_val - 1), 2)
+        out = path.getsize(after)
+        original = path.getsize(before)
+        dif = percentage_difference(out, original)
+        return dif, out, original
+
+    def print_info(fp, dst, size_dif):
+        def pn(name):
+            return name[:57] + '...' if len(name) > 57 else name
+        
+        def pp(size_dif):
+            return size_dif if size_dif <= 0 else '+' + str(size_dif)
+
+        on = path.basename(fp)
+        ne = path.splitext(dst)[1]
+        print(' {} >>> {}, {}%'.format(pn(on), ne, pp(size_dif)))
+
+    try: 
+        img = get_PIL_image(fp)
+
+        options = {
+            'exif': img.info.get('exif', b''), 
+            'icc_profile': img.info.get('icc_profile', b'') # чтобы не убить цвета
+        }
+
+        if back_convert:
+            dst = get_back_img_path(fp, img)
+            if img.mode == 'RGB':
+                options.update({'quality': 95})
+        else:
+            dst = get_webp_path(fp, lossless_png)
+            options.update({
+                'method': 6, # https://pillow.readthedocs.io/en/5.1.x/handbook/image-file-formats.html?highlight=webp#webp, хотя между 0 и 6 разницы как-то не видно...
+                'quality': Q
+            })
+            if get_type(fp) == 'png' and lossless_png:
+                options.update({'lossless': True})
+        
+        img.save(dst, **options)
+        size_dif, new, original = size_difference(dst, fp)
+        print_info(fp, dst, size_dif)
+        
+        try:
+            if remove_after:
+                remove(fp)
+        except Exception as e:
+            print('не получилось удалить: {}, \n{}'.format(fp, e))
+        
+        return new, original
+    except Exception as e:
+        print('что-то умерло: {}, \n{}'.format(fp, e))
+        return 0, 0
+
+def final_output(resuls):
+    def pp(sum_dif):
+        return sizeof_fmt(sum_dif) if sum_dif <= 0 else '+' + sizeof_fmt(sum_dif)
+    
+    sum_dif = sum(map(lambda L: L[0], results)) - sum(map(lambda L: L[1], results))
+    print('\nвсего: {}, {} файл(ов)\n'.format(pp(sum_dif), len(results)))
+
 if __name__ == '__main__':
     freeze_support()
     args = get_args()
     
     sup = prepare_supported(args.f)
 
+    if args.supported:
+        show_supported_formats()
+        exit()
+
+    if args.input is None:
+        raise ValueError('аргумент -i осутствует!')
+
     if args.exif:
         show_exif(args.input)
         exit()
-
+    
     if args.to_decode:
         sup = ['webp']
 
@@ -181,7 +222,7 @@ if __name__ == '__main__':
     paths = []
     if path.isfile(args.input) and path.splitext(args.input)[1] == '.txt':
         paths = parse_txt(args.input)
-    elif path.isfile(args.input) and path.splitext(args.input)[1] in sup:
+    elif path.isfile(args.input) and get_type(args.input) in sup:
         files.append(path.abspath(args.input))
     elif path.isdir(args.input):
         paths.append(args.input)
@@ -194,7 +235,8 @@ if __name__ == '__main__':
     start = clock()
     with Pool() as pool:
         lower_child_priority()
-        results = pool.map(partial(encode, lossless_png = args.L) if not args.to_decode else decode, files)
+        results = pool.map(partial(encode, lossless_png = args.L, back_convert = args.to_decode), files)
+    
     if len(results) > 0:
         final_output(results)
     print('%s: %s\n%s' % (path.split(argv[0])[1], str(timedelta(seconds = round(clock() - start))), '-'*34))
