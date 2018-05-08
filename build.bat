@@ -1,1 +1,0 @@
-pyinstaller .\pic2webp.spec --clean --log-level WARN

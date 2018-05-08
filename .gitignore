@@ -51,4 +51,6 @@ Network Trash Folder
 # build
 build
 dist
+venv
 __*__
+
