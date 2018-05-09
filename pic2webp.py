@@ -6,11 +6,13 @@ from time import clock
 from datetime import timedelta
 from sys import argv, exit
 from codecs import open as copen
-from PIL import Image
 from functools import partial
+from itertools import chain
+from PIL import Image
 import argparse
-import psutil
 import re
+import psutil
+
 
 Image.MAX_IMAGE_PIXELS = 1000*10**6 # Для очень больших изображений - т.е. предупреждения о бомбе декомпрессии не будет вплоть до картинок в 1000МП  
 
@@ -92,13 +94,11 @@ def get_type(fp):
         return UF
 
 def get_files(Path, supported):
-    files = []
     for dirpath, dirnames, filenames in walk(Path):
         for f in filenames:
             fp = path.join(dirpath, f)
             if get_type(fp) in supported:
-                files.append(fp)
-    return files
+                yield fp
 
 def lower_child_priority():
     parent = psutil.Process()
@@ -158,10 +158,10 @@ def encode(fp, lossless_png, back_convert = False):
     try: 
         img = get_PIL_image(fp)
 
-        options = {
-            'exif': img.info.get('exif', b''), 
-            'icc_profile': img.info.get('icc_profile', b'') # чтобы не убить цвета
-        }
+        options = img.info.copy() #{
+            # 'exif': img.info.get('exif', b''), 
+            # 'icc_profile': img.info.get('icc_profile', b'') # чтобы не убить цвета
+        #}
 
         if back_convert:
             dst = get_back_img_path(fp, img)
@@ -229,8 +229,8 @@ if __name__ == '__main__':
     else:
         exit('жизнь меня к такому не готовила!')
 
-    for p in paths: # игнорится при paths = []
-        files.extend(get_files(p, sup))
+    if paths:
+        files = chain(*(get_files(p, sup) for p in paths))
 
     start = clock()
     with Pool() as pool:
