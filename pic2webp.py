@@ -230,7 +230,7 @@ if __name__ == '__main__':
         exit('жизнь меня к такому не готовила!')
 
     if paths:
-        files.extend(chain(*(get_files(p) for p in paths))) # бессмысленно, т.к. генератор может быть проитерирован только один раз (всё равно снизу итерируется в один поток)
+        files.extend(chain(*(get_files(p) for p in paths)))
 
     start = clock()
     with Pool() as pool:
