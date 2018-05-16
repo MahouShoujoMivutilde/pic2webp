@@ -188,7 +188,7 @@ def encode(fp, lossless_png, quality, back_convert = False):
         
         return new, original
     except Exception as e:
-        print('что-то умерло: {}, \n{}'.format(fp, e))
+        print('что-то умерло:\n {}\n {}'.format(fp, e))
         return 0, 0
 
 def final_output(resuls):
