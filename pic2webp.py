@@ -10,6 +10,7 @@ from functools import partial
 from itertools import chain
 from PIL import Image
 import argparse
+import mimetypes
 import re
 import psutil
 
@@ -28,11 +29,12 @@ def get_args():
     parser = argparse.ArgumentParser(description = "Скрипт для конвертирования изображений в webp") 
     parser.add_argument("--input", "-i", help = "Путь к изображению, папке с изображениями или .utf8.txt-списку папок (в котором каждый новый путь с новой строки)")
     parser.add_argument("--to_decode", "-d", action = "store_true", help = "Конвертировать из webp в png/jpeg в зависимости от режима изображения (с прозрачностью/без)")
-    parser.add_argument("-q", default = Q, type = int, help = "Качество webp [0; 100], больше - лучше сжатие (при сжатии без потерь), лучше качество (если с потерями); то же самое значение используется и при обратном конвертировании - в jpeg")
+    parser.add_argument("-q", default = Q, type = int, help = "Качество webp/jpeg [0; 100], для webp больше - лучше сжатие (при сжатии без потерь), лучше качество (если с потерями); то же самое значение используется и при обратном конвертировании - в jpeg")
     parser.add_argument("-exif", action = "store_true", help = "Вывод exif webp-изображения по заданному пути")
-    parser.add_argument("-L", action = "store_true", help = "Сжатие png без потерь")
+    parser.add_argument("-L", action = "store_true", help = "Сжатие без потерь")
     parser.add_argument("-f", default = default_formats, type = lambda s: s.split(','),  help = "Кастомный список кодируемых форматов (остальные игнорятся) для конвертации в webp, через запятую без пробелов - см. доступные через --supported, дефолтно '{}'".format(','.join(default_formats)))
     parser.add_argument("--supported", action = "store_true",  help = "Вывести список всех поддерживаемых форматов данной версии Pillow")
+    parser.add_argument("--mime", action = "store_true",  help = "Определение типа файла не по содержимому файла, а по расширению - быстрее, если файлов много (1k+), но не всегда точно")
     return parser.parse_args()
 
 def prepare_supported(supported):
@@ -87,21 +89,35 @@ def parse_txt(txt):
                 print('{} - пропущен, т.к. не папка / не существует'.format(p))
     return L
 
-def get_type(fp):
-    try:
-        with Image.open(fp) as img:
-            return img.format.lower()
-    except:
-        return UF
+def get_type(fp, as_mime = False):
+    def get_PIL_image_type(fp):
+        try:
+            with Image.open(fp) as img:
+                return img.format.lower()
+        except:
+            return UF
+
+    def get_mime_type(fp):
+        mime = mimetypes.guess_type(fp)[0]
+        if mime:
+            return mime.split('/')[1]
+        else:
+            return UF
+
+    if as_mime:
+        return get_mime_type(fp)
+    else:
+        return get_PIL_image_type(fp)
 
 def get_files(folder):
     for dirpath, dirnames, filenames in walk(folder):
         for f in filenames:
             yield path.join(dirpath, f)
 
-def is_sup(fp, supported):
-    if get_type(fp) in supported:
-        return fp
+def is_sup(fp, supported, as_mime = False):
+    fmt = get_type(fp, as_mime)
+    if fmt in supported:
+        return {'fp': fp, 'format': fmt}
 
 def lower_child_priority():
     parent = psutil.Process()
@@ -116,7 +132,7 @@ def sizeof_fmt(num, suffix='B'):  # http://stackoverflow.com/a/1094933
         num /= 1024.0
     return "%.1f%s%s" % (num, 'Yi', suffix)
 
-def encode(fp, lossless_png, quality, back_convert = False):
+def encode(fp_fmt_dic, lossless, quality, back_convert = False):
     def get_PIL_image(fp):
         with Image.open(fp) as image:
             if image.mode in ('RGBA', 'LA') or (image.mode == 'P' and 'transparency' in image.info):
@@ -124,18 +140,18 @@ def encode(fp, lossless_png, quality, back_convert = False):
             else:
                 return image.convert('RGB')
     
-    def get_webp_path(fp, lossless_png, quality):
+    def get_webp_path(fp, lossless, quality):
         base = path.splitext(fp)[0]
-        if get_type(fp) == 'png' and lossless_png:
+        if lossless:
             return '%s_qLL.webp' % base
         else:
             return '%s_q%d.webp' % (base, quality)
     
-    def get_back_img_path(fp, image):
+    def get_back_img_path(fp, mode, lossless):
         name = path.basename(fp)
         dp = path.dirname(fp)
-        no_ext_name = re.sub('(_q\d{1,2}0{1}?|_qLL)', '', path.splitext(name)[0]) # чтобы убрать суффикс _qЧИСЛО
-        if image.mode == 'RGBA':
+        no_ext_name = re.sub('_q(\d|\d{2}|100|LL)$', '', path.splitext(name)[0]) # чтобы убрать суффикс _qЧИСЛО
+        if mode == 'RGBA' or lossless:
             return path.join(dp, no_ext_name + '.png')
         else:
             return path.join(dp, no_ext_name + '.jpg')
@@ -158,22 +174,24 @@ def encode(fp, lossless_png, quality, back_convert = False):
         ne = path.splitext(dst)[1]
         print(' {} >>> {}, {}%'.format(pn(on), ne, pp(size_dif)))
 
-    try: 
+    try:
+        fp, img_format = fp_fmt_dic['fp'], fp_fmt_dic['format']
+        
         img = get_PIL_image(fp)
 
         options = img.info.copy()
 
         if back_convert:
-            dst = get_back_img_path(fp, img)
-            if img.mode == 'RGB':
+            dst = get_back_img_path(fp, img.mode, lossless)
+            if img.mode == 'RGB' and not lossless:
                 options.update({'quality': quality})
         else:
-            dst = get_webp_path(fp, lossless_png, quality)
+            dst = get_webp_path(fp, lossless, quality)
             options.update({
                 'method': 6, # https://pillow.readthedocs.io/en/5.1.x/handbook/image-file-formats.html?highlight=webp#webp, хотя между 0 и 6 разницы как-то не видно...
                 'quality': quality
             })
-            if get_type(fp) == 'png' and lossless_png:
+            if lossless:
                 options.update({'lossless': True})
         
         img.save(dst, **options)
@@ -235,8 +253,8 @@ if __name__ == '__main__':
     start = clock()
     with Pool() as pool:
         lower_child_priority()
-        sup_files = [file for file in pool.map(partial(is_sup, supported = sup), files) if file is not None]
-        results = pool.map(partial(encode, lossless_png = args.L, quality = args.q, back_convert = args.to_decode), sup_files)
+        sup_files = [file for file in pool.map(partial(is_sup, supported = sup, as_mime = args.mime), files) if file is not None]
+        results = pool.map(partial(encode, lossless = args.L, quality = args.q, back_convert = args.to_decode), sup_files)
     
     if len(results) > 0:
         final_output(results)
